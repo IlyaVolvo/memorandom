@@ -9,19 +9,75 @@
  * - From round 2+: recall all previous round words (doubled points)
  */
 
-// Thematic word lists - simple, related words
-const WORD_THEMES = {
-  animals: ['cat', 'dog', 'bird', 'fish', 'frog', 'bear', 'lion', 'wolf', 'deer', 'duck', 'goat', 'mole', 'seal', 'swan', 'crab'],
-  colors: ['red', 'blue', 'green', 'pink', 'gray', 'gold', 'navy', 'teal', 'mint', 'lime', 'rust', 'sand', 'coal', 'snow', 'rose'],
-  fruits: ['apple', 'grape', 'lemon', 'mango', 'melon', 'peach', 'pear', 'plum', 'berry', 'cherry', 'dates', 'figs', 'kiwi', 'lime', 'prune'],
-  nature: ['tree', 'leaf', 'rock', 'rain', 'wind', 'snow', 'moon', 'star', 'lake', 'hill', 'wave', 'mist', 'dawn', 'dusk', 'moss'],
-  food: ['bread', 'cheese', 'honey', 'milk', 'rice', 'soup', 'toast', 'wheat', 'flour', 'sugar', 'salad', 'pasta', 'beans', 'nuts', 'eggs'],
-  body: ['hand', 'foot', 'head', 'nose', 'ear', 'eye', 'arm', 'leg', 'lip', 'chin', 'neck', 'back', 'chest', 'palm', 'heel'],
-  home: ['door', 'room', 'wall', 'desk', 'lamp', 'sofa', 'shelf', 'table', 'chair', 'bed', 'rug', 'oven', 'sink', 'bath', 'hall'],
-  weather: ['sun', 'cloud', 'storm', 'frost', 'hail', 'fog', 'mist', 'dew', 'breeze', 'gust', 'chill', 'warmth', 'humidity', 'drought', 'flood']
+// Word groups loaded from JSON (raw structure with category/sets/complexity)
+let WORD_GROUPS = [];
+
+const STORAGE_KEY = 'memorandom-settings';
+const DEFAULT_SETTINGS = {
+  lifelines: 5,
+  initialWords: 3,
+  secondsPerWord: 2,
+  attemptsPerRound: 4,
+  maxComplexity: 3,
+  selectedCategories: [],
+  mix: false
 };
 
-const THEME_NAMES = Object.keys(WORD_THEMES);
+function loadStoredSettings() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return { ...DEFAULT_SETTINGS, ...parsed };
+    }
+  } catch (e) {
+    console.warn('Could not load stored settings', e);
+  }
+  return null;
+}
+
+function saveSettings(settings) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    showSavedHint();
+    return true;
+  } catch (e) {
+    console.warn('Could not save settings (localStorage may be disabled)', e);
+    return false;
+  }
+}
+
+function showSavedHint() {
+  const el = document.getElementById('settings-saved-hint');
+  if (!el) return;
+  el.textContent = 'Saved';
+  el.classList.add('visible');
+  clearTimeout(showSavedHint._tid);
+  showSavedHint._tid = setTimeout(() => {
+    el.classList.remove('visible');
+  }, 2000);
+}
+
+function getCategoryNames() {
+  return (WORD_GROUPS || []).map(g => g.category).filter(Boolean);
+}
+
+function applySettingsToForm(settings) {
+  document.getElementById('lifelines').value = settings.lifelines;
+  document.getElementById('initial-words').value = settings.initialWords;
+  document.getElementById('seconds-per-word').value = settings.secondsPerWord;
+  document.getElementById('attempts-per-round').value = settings.attemptsPerRound;
+  document.getElementById('max-complexity').value = settings.maxComplexity;
+  document.getElementById('mix-mode').checked = !!settings.mix;
+
+  const selected = settings.selectedCategories || [];
+  const container = document.getElementById('category-checkboxes');
+  if (container) {
+    container.querySelectorAll('input[data-category]').forEach(cb => {
+      cb.checked = selected.length === 0 || selected.includes(cb.dataset.category);
+    });
+  }
+}
 
 // Game state
 let config = {};
@@ -34,19 +90,97 @@ let state = {
   currentRoundWords: [],
   phase: 'config',
   displayIndex: 0,
-  displayTimer: null
+  displayTimer: null,
+  wordStats: []  // [{ word, shown, correct }, ...] per word in game order
 };
 
 // DOM refs
 const elements = {};
 
+async function loadWordGroups() {
+  try {
+    const res = await fetch('word-groups.json');
+    WORD_GROUPS = await res.json();
+  } catch (e) {
+    console.warn('Could not load word-groups.json', e);
+  }
+}
+
+function buildWordData(maxComplexity, selectedCategories, mix) {
+  const categories = selectedCategories && selectedCategories.length > 0
+    ? selectedCategories
+    : getCategoryNames();
+
+  const categorySets = [];
+  const allWords = [];
+
+  for (const group of WORD_GROUPS) {
+    if (!categories.includes(group.category)) continue;
+    for (const set of group.sets || []) {
+      if (set.complexity <= maxComplexity && set.list && set.list.length >= 6) {
+        const words = [...set.list];
+        categorySets.push(words);
+        if (mix) allWords.push(...words);
+      }
+    }
+  }
+
+  return { categorySets, allWords };
+}
+
+function isLocalStorageAvailable() {
+  try {
+    const key = '__memorandom_test__';
+    localStorage.setItem(key, '1');
+    localStorage.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function buildCategoryCheckboxes() {
+  const container = document.getElementById('category-checkboxes');
+  if (!container) return;
+  container.innerHTML = '';
+  for (const cat of getCategoryNames()) {
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.dataset.category = cat;
+    cb.addEventListener('change', saveSettingsFromForm);
+    const name = document.createTextNode(' ' + cat);
+    label.appendChild(cb);
+    label.appendChild(name);
+    container.appendChild(label);
+  }
+}
+
 function init() {
+  loadWordGroups().then(() => {
+    buildCategoryCheckboxes();
+    const stored = loadStoredSettings();
+    if (stored) {
+      applySettingsToForm(stored);
+    } else {
+      saveSettings(DEFAULT_SETTINGS);
+      applySettingsToForm(DEFAULT_SETTINGS);
+    }
+  });
+  if (!isLocalStorageAvailable()) {
+    console.warn('localStorage unavailable (e.g. file:// or private mode). Settings will not persist.');
+    const hint = document.createElement('p');
+    hint.className = 'localStorage-warning';
+    hint.textContent = 'Settings won\'t persist. Open via http:// (e.g. npx serve .) for saving.';
+    document.querySelector('.config-card')?.insertBefore(hint, document.querySelector('.config-grid'));
+  }
   elements.configScreen = document.getElementById('config-screen');
   elements.gameScreen = document.getElementById('game-screen');
   elements.lifelinesDisplay = document.getElementById('lifelines-display');
   elements.pointsDisplay = document.getElementById('points-display');
   elements.roundDisplay = document.getElementById('round-display');
   elements.hearts = document.getElementById('hearts');
+  elements.gameOverStartBtn = document.getElementById('game-over-start-btn');
   elements.watchPhase = document.getElementById('watch-phase');
   elements.writePhase = document.getElementById('write-phase');
   elements.recallPhase = document.getElementById('recall-phase');
@@ -56,11 +190,43 @@ function init() {
   elements.wordInputsContainer = document.getElementById('word-inputs-container');
   elements.recallInputsContainer = document.getElementById('recall-inputs-container');
   elements.finalScore = document.getElementById('final-score');
+  elements.gameOverWords = document.getElementById('game-over-words');
 
-  document.getElementById('start-btn').addEventListener('click', startGame);
-  document.getElementById('restart-btn').addEventListener('click', goToConfig);
-  document.getElementById('restart-game-btn').addEventListener('click', goToConfig);
+  document.getElementById('start-btn').addEventListener('click', () => { goToGame(); startGame(); });
+  document.getElementById('start-game-btn').addEventListener('click', startGame);
+  document.getElementById('game-over-start-btn').addEventListener('click', startGame);
+  document.getElementById('settings-btn').addEventListener('click', goToConfig);
 
+  ['lifelines', 'initial-words', 'seconds-per-word', 'attempts-per-round', 'max-complexity'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('change', saveSettingsFromForm);
+      el.addEventListener('input', saveSettingsFromForm);
+    }
+  });
+  const mixEl = document.getElementById('mix-mode');
+  if (mixEl) mixEl.addEventListener('change', saveSettingsFromForm);
+
+  showPhase('start');
+}
+
+function getSelectedCategoriesFromForm() {
+  const checkboxes = document.querySelectorAll('#category-checkboxes input[data-category]:checked');
+  return Array.from(checkboxes).map(cb => cb.dataset.category);
+}
+
+function saveSettingsFromForm() {
+  const selected = getSelectedCategoriesFromForm();
+  const allCats = getCategoryNames();
+  saveSettings({
+    lifelines: parseInt(document.getElementById('lifelines').value, 10) || DEFAULT_SETTINGS.lifelines,
+    initialWords: parseInt(document.getElementById('initial-words').value, 10) || DEFAULT_SETTINGS.initialWords,
+    secondsPerWord: parseInt(document.getElementById('seconds-per-word').value, 10) || DEFAULT_SETTINGS.secondsPerWord,
+    attemptsPerRound: parseInt(document.getElementById('attempts-per-round').value, 10) || DEFAULT_SETTINGS.attemptsPerRound,
+    maxComplexity: Math.min(3, Math.max(1, parseInt(document.getElementById('max-complexity').value, 10) || DEFAULT_SETTINGS.maxComplexity)),
+    selectedCategories: selected.length === allCats.length ? [] : selected,
+    mix: document.getElementById('mix-mode').checked
+  });
 }
 
 function goToConfig() {
@@ -72,17 +238,35 @@ function goToConfig() {
   elements.configScreen.classList.add('active');
 }
 
+function goToGame() {
+  elements.configScreen.classList.remove('active');
+  elements.gameScreen.classList.add('active');
+}
+
 function getConfig() {
+  const allCats = getCategoryNames();
+  const selected = getSelectedCategoriesFromForm();
   return {
     lifelines: parseInt(document.getElementById('lifelines').value, 10) || 5,
     initialWords: parseInt(document.getElementById('initial-words').value, 10) || 3,
     secondsPerWord: parseInt(document.getElementById('seconds-per-word').value, 10) || 2,
-    attemptsPerRound: parseInt(document.getElementById('attempts-per-round').value, 10) || 4
+    attemptsPerRound: parseInt(document.getElementById('attempts-per-round').value, 10) || 4,
+    maxComplexity: Math.min(3, Math.max(1, parseInt(document.getElementById('max-complexity').value, 10) || 3)),
+    selectedCategories: selected.length === allCats.length ? [] : selected,
+    mix: document.getElementById('mix-mode').checked
   };
 }
 
 function startGame() {
   config = getConfig();
+  saveSettingsFromForm();
+  const { categorySets, allWords } = buildWordData(
+    config.maxComplexity,
+    config.selectedCategories,
+    config.mix
+  );
+  config.categorySets = categorySets;
+  config.allWords = allWords;
   state = {
     lifelines: config.lifelines,
     points: 0,
@@ -92,7 +276,8 @@ function startGame() {
     currentRoundWords: [],
     phase: 'watch',
     displayIndex: 0,
-    displayTimer: null
+    displayTimer: null,
+    wordStats: []
   };
 
   elements.configScreen.classList.remove('active');
@@ -104,14 +289,31 @@ function startGame() {
 }
 
 function startRound() {
-  const theme = THEME_NAMES[state.round % THEME_NAMES.length];
-  const themeWords = [...WORD_THEMES[theme]];
-  shuffle(themeWords);
-
   const maxWordsNeeded = config.initialWords + config.attemptsPerRound - 1;
-  state.currentRoundWords = themeWords.slice(0, maxWordsNeeded);
-  state.attempt = 1;
+  let themeWords;
 
+  if (config.mix && config.allWords && config.allWords.length >= maxWordsNeeded) {
+    const pool = [...new Set(config.allWords)];
+    shuffle(pool);
+    themeWords = pool.slice(0, maxWordsNeeded);
+  } else {
+    const sets = (config.categorySets || []).filter(s => s.length >= maxWordsNeeded);
+    if (!sets.length) {
+      console.error('No word sets available. Select categories or increase max complexity.');
+      return;
+    }
+    const setIndex = Math.floor(Math.random() * sets.length);
+    themeWords = [...sets[setIndex]];
+    shuffle(themeWords);
+    themeWords = themeWords.slice(0, maxWordsNeeded);
+  }
+
+  if (!themeWords || themeWords.length < maxWordsNeeded) {
+    console.error('Not enough words. Select more categories or enable Mix.');
+    return;
+  }
+  state.currentRoundWords = themeWords;
+  state.attempt = 1;
   showPhase('watch');
   runAttempt();
 }
@@ -129,8 +331,10 @@ function runAttempt() {
 
   function showNextWord() {
     if (state.displayIndex >= wordsToShow.length) {
-      clearInterval(state.displayTimer);
+      clearTimeout(state.displayTimer);
       state.displayTimer = null;
+      const batch = state.currentRoundWords.slice(0, wordCount);
+      batch.forEach(w => state.wordStats.push({ word: w, shown: 1, correct: 0 }));
       showPhase('write');
       buildWordInputs(wordCount, 'words');
       return;
@@ -218,6 +422,7 @@ function showSlotFeedback(container, slotFeedback, expectedWords) {
 }
 
 function scoreAttempt(playerWords, expectedWords, doublePoints = false) {
+  // Rules: -1 lifeline per missing word; 2 pts correct place; 1 pt wrong place
   const multiplier = doublePoints ? 2 : 1;
   let points = 0;
   let lifelinesLost = 0;
@@ -235,7 +440,9 @@ function scoreAttempt(playerWords, expectedWords, doublePoints = false) {
     }
   }
 
-  // Second pass: correct word, wrong position (1 point)
+  const slotFeedback = playerWords.map(() => 'wrong');
+
+  // Second pass: correct word, wrong position (1 point) — also mark slotFeedback
   for (let i = 0; i < expectedWords.length; i++) {
     if (expectedUsed[i]) continue;
     const exp = expectedWords[i].toLowerCase();
@@ -245,8 +452,22 @@ function scoreAttempt(playerWords, expectedWords, doublePoints = false) {
         points += 1 * multiplier;
         expectedUsed[i] = true;
         playerUsed[j] = true;
+        slotFeedback[j] = 'wrong-place';
         break;
       }
+    }
+  }
+
+  const correctIndices = [];
+  for (let i = 0; i < expectedWords.length; i++) {
+    if (expectedUsed[i]) correctIndices.push(i);
+  }
+
+  // Mark exact matches as correct
+  for (let i = 0; i < expectedWords.length; i++) {
+    const exp = expectedWords[i].toLowerCase();
+    if (i < playerWords.length && playerWords[i] === exp) {
+      slotFeedback[i] = 'correct';
     }
   }
 
@@ -259,26 +480,7 @@ function scoreAttempt(playerWords, expectedWords, doublePoints = false) {
     }
   }
 
-  const slotFeedback = playerWords.map(() => 'wrong');
-  for (let i = 0; i < expectedWords.length; i++) {
-    const exp = expectedWords[i].toLowerCase();
-    if (i < playerWords.length && playerWords[i] === exp) {
-      slotFeedback[i] = 'correct';
-    }
-  }
-  for (let i = 0; i < expectedWords.length; i++) {
-    if (expectedUsed[i]) continue;
-    const exp = expectedWords[i].toLowerCase();
-    for (let j = 0; j < playerWords.length; j++) {
-      if (slotFeedback[j] !== 'wrong') continue;
-      if (playerWords[j] === exp) {
-        slotFeedback[j] = 'wrong-place';
-        break;
-      }
-    }
-  }
-
-  return { points, lifelinesLost, missedWords, slotFeedback };
+  return { points, lifelinesLost, missedWords, slotFeedback, correctIndices };
 }
 
 function submitWords() {
@@ -286,7 +488,11 @@ function submitWords() {
   const expectedWords = state.currentRoundWords.slice(0, wordCount);
   const playerWords = getWordInputValues(elements.wordInputsContainer);
 
-  const { points, lifelinesLost, slotFeedback } = scoreAttempt(playerWords, expectedWords);
+  const { points, lifelinesLost, slotFeedback, correctIndices } = scoreAttempt(playerWords, expectedWords);
+  const base = state.wordStats.length - wordCount;
+  correctIndices.forEach(i => {
+    if (state.wordStats[base + i]) state.wordStats[base + i].correct++;
+  });
 
   state.points += points;
   state.lifelines -= lifelinesLost;
@@ -294,7 +500,7 @@ function submitWords() {
   updateStats();
 
   if (state.lifelines <= 0) {
-    showGameOver();
+    showGameOver('write');
     return;
   }
 
@@ -320,6 +526,7 @@ function continueGame() {
       // Recall phase: write all words from previous rounds
       const wordsToRecall = state.roundWords.slice(0, -1).flat();
       state.recallExpected = wordsToRecall;
+      wordsToRecall.forEach(w => state.wordStats.push({ word: w, shown: 0, correct: 0 }));
       showPhase('recall');
       buildWordInputs(wordsToRecall.length, 'recall');
     } else {
@@ -332,7 +539,11 @@ function submitRecall() {
   const expectedWords = state.recallExpected;
   const playerWords = getWordInputValues(elements.recallInputsContainer);
 
-  const { points, lifelinesLost, slotFeedback } = scoreAttempt(playerWords, expectedWords, true);
+  const { points, lifelinesLost, slotFeedback, correctIndices } = scoreAttempt(playerWords, expectedWords, true);
+  const base = state.wordStats.length - expectedWords.length;
+  correctIndices.forEach(i => {
+    if (state.wordStats[base + i]) state.wordStats[base + i].correct++;
+  });
 
   state.points += points;
   state.lifelines -= lifelinesLost;
@@ -340,7 +551,7 @@ function submitRecall() {
   updateStats();
 
   if (state.lifelines <= 0) {
-    showGameOver();
+    showGameOver('recall');
     return;
   }
 
@@ -357,7 +568,7 @@ function nextRound() {
   state.attempt = 1;
 
   if (state.lifelines <= 0) {
-    showGameOver();
+    showGameOver('nextRound');
     return;
   }
 
@@ -365,21 +576,55 @@ function nextRound() {
   startRound();
 }
 
-function showGameOver() {
-  showPhase('gameover');
+function getAllWordsFromGame(fromPhase) {
+  const fromRounds = state.roundWords.flat();
+  // Only add current round words when we lost during write (round not yet pushed)
+  if (fromPhase === 'write') {
+    const wordCount = config.initialWords + state.attempt - 1;
+    const currentWords = state.currentRoundWords.slice(0, wordCount);
+    return [...fromRounds, ...currentWords];
+  }
+  return fromRounds;
+}
+
+function showGameOver(fromPhase = 'nextRound') {
+  elements.lifelinesDisplay.textContent = 'Game over';
+  elements.hearts.textContent = '';
+
+  showPhase('game-over');
   elements.finalScore.textContent = state.points;
+
+  const allWords = getAllWordsFromGame(fromPhase);
+  const stats = state.wordStats || [];
+  const wordsContainer = elements.gameOverWords || document.getElementById('game-over-words');
+  if (wordsContainer) {
+    wordsContainer.innerHTML = '';
+    const list = document.createElement('ol');
+    list.className = 'game-over-words-list';
+    allWords.forEach((word, i) => {
+      const li = document.createElement('li');
+      const s = stats[i];
+      const n1 = (s && s.shown != null) ? s.shown : '—';
+      const n2 = (s && s.correct != null) ? s.correct : '—';
+      li.innerHTML = `${word} (<span class="word-stat-n1">${n1}</span>/<span class="word-stat-n2">${n2}</span>)`;
+      list.appendChild(li);
+    });
+    wordsContainer.appendChild(list);
+  }
 }
 
 function showPhase(phase) {
-  const phases = ['watch', 'write', 'recall', 'gameover'];
-  phases.forEach(p => {
-    const el = document.getElementById(`${p}-phase`);
+  const phaseMap = { start: 'start-phase', watch: 'watch-phase', write: 'write-phase', recall: 'recall-phase', 'game-over': 'game-over-phase' };
+  Object.entries(phaseMap).forEach(([p, id]) => {
+    const el = document.getElementById(id);
     if (el) el.classList.toggle('hidden', p !== phase);
   });
   state.phase = phase;
+  elements.gameScreen.classList.toggle('at-start', phase === 'start');
 }
 
 function updateStats() {
+  if (state.phase === 'game-over' || state.phase === 'start') return;
   elements.lifelinesDisplay.textContent = state.lifelines;
   elements.pointsDisplay.textContent = state.points;
   elements.roundDisplay.textContent = state.round;
