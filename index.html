@@ -10,7 +10,7 @@
   <div class="app">
     <header class="header">
       <h1>Memorandom</h1>
-      <p class="subtitle">Train your word memory</p>
+      <p id="header-status" class="header-status"></p>
       <button id="settings-btn" class="btn btn-ghost btn-settings header-settings" title="Change game settings">⚙ Settings</button>
     </header>
 
@@ -57,58 +57,30 @@
 
     <!-- Game Screen -->
     <section id="game-screen" class="screen active">
-      <div class="game-stats">
-        <div class="stat lifelines">
-          <span class="stat-label">Lifelines</span>
-          <span id="lifelines-display" class="stat-value">5</span>
-          <span id="hearts" class="hearts"></span>
-        </div>
-        <div class="stat points">
-          <span class="stat-label">Points</span>
-          <span id="points-display" class="stat-value">0</span>
-        </div>
-        <div class="stat round">
-          <span class="stat-label">Round</span>
-          <span id="round-display" class="stat-value">1</span>
-        </div>
-      </div>
-
       <div id="game-content">
         <!-- Phase: Start (initial / ready to play) -->
         <div id="start-phase" class="phase">
-          <p class="phase-hint">Ready to play?</p>
           <button id="start-game-btn" class="btn btn-primary">Start Game</button>
         </div>
-        <!-- Phase: Watching words -->
-        <div id="watch-phase" class="phase hidden">
-          <p class="phase-hint">Memorize the words...</p>
-          <div id="word-display" class="word-display"></div>
-          <div id="word-countdown" class="countdown"></div>
+        <!-- Phase: Study + Answer (shared rectangles) -->
+        <div id="play-phase" class="phase hidden">
+          <div id="word-slots" class="word-slots"></div>
+          <button id="ready-btn" type="button" class="btn btn-primary ready-btn">Ready</button>
         </div>
-
-        <!-- Phase: Writing words -->
-        <div id="write-phase" class="phase hidden">
-          <p class="phase-hint">Write the words in order (Enter on last slot to submit):</p>
-          <div id="word-inputs-container" class="word-inputs"></div>
+        <!-- Round over flash -->
+        <div id="round-over-phase" class="phase hidden">
+          <p id="round-over-message" class="round-over-message"></p>
         </div>
-
-        <!-- Phase: Recall previous rounds -->
-        <div id="recall-phase" class="phase hidden">
-          <p class="phase-hint recall-hint">Recall all words from previous round(s). Points doubled! (Enter on last slot to submit)</p>
-          <div id="recall-inputs-container" class="word-inputs"></div>
-        </div>
-
         <!-- Game Over -->
         <div id="game-over-phase" class="phase hidden">
-          <p class="phase-hint">Final list of words for review</p>
-          <p class="final-score">Final Score: <span id="final-score">0</span> points</p>
-          <div id="game-over-words" class="game-over-words"></div>
+          <div id="game-over-words" class="game-over-columns"></div>
+          <p class="final-score">Points: <span id="final-score">0</span></p>
           <button id="game-over-start-btn" class="btn btn-primary">Start Game</button>
         </div>
       </div>
     </section>
   </div>
 
-  <script src="game.js"></script>
+  <script src="game.js?v=7"></script>
 </body>
 </html>
