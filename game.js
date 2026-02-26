@@ -268,7 +268,9 @@ function updateHeader() {
   const hearts = '♥'.repeat(Math.max(0, state.lifelines));
   const lowClass = state.lifelines <= 1 ? ' low' : '';
   let roundLabel;
-  if (state.mode === 'replay-feedback') {
+  if (state.mode === 'round-feedback') {
+    roundLabel = `ROUND ${state.round} — press Ready`;
+  } else if (state.mode === 'replay-feedback') {
     roundLabel = `REPEAT ROUND ${state.replayRoundIndex + 1} — press Ready`;
   } else if (state.replayRoundIndex >= 0) {
     roundLabel = `REPEAT ROUND ${state.replayRoundIndex + 1}`;
@@ -448,6 +450,8 @@ function onReady() {
     renderAnswerMode();
   } else if (state.mode === 'answer') {
     submitAnswer();
+  } else if (state.mode === 'round-feedback') {
+    advanceFromRoundFeedback();
   } else if (state.mode === 'replay-feedback') {
     advanceFromReplayFeedback();
   }
@@ -494,11 +498,14 @@ function submitAnswer() {
     state.wordStats.push({ word: state.currentRoundWords[state.wordCount - 1], shown: 1, correct: 0 });
     renderStudyMode();
   } else {
-    // Last attempt: round N complete - don't show result, go straight to repeat rounds or new round
+    // Last attempt: round N complete - show correct set (green/yellow/red), wait for Ready
     if (state.replayRoundIndex < 0) {
       state.roundWords.push([...state.currentRoundWords.slice(0, config.initialWords + config.attemptsPerRound - 1)]);
     }
-    advanceFromRoundFeedback();
+    renderReplayFeedback();
+    state.mode = 'round-feedback';
+    showPhase('play');
+    elements.readyBtn?.classList.remove('hidden');
   }
 }
 
