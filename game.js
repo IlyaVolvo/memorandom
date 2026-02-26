@@ -86,7 +86,8 @@ let state = {
   wordCount: 0,
   slotFeedback: [],
   wordStats: [],
-  replayRoundIndex: -1
+  replayRoundIndex: -1,
+  helpSlotIndex: -1
 };
 
 const elements = {};
@@ -379,12 +380,129 @@ function renderAnswerMode() {
     }
   }
   attachSlotNavigation();
+  attachHelpHandlers();
   elements.wordSlots.querySelector('.word-slot-input[data-index="0"]')?.focus();
 }
 
+const HELP_LONG_PRESS_MS = 1000;
+let helpLongPressTimer = null;
+let _helpCleanupFns = [];
+
+function getHelpSlotIndex(el) {
+  const slot = el?.closest('.word-slot.active');
+  const input = slot?.querySelector('.word-slot-input');
+  const idx = parseInt(input?.dataset.index ?? '-1', 10);
+  return slot && idx >= 0 && idx < state.wordCount ? idx : -1;
+}
+
+function dismissHelpPopup() {
+  document.querySelectorAll('.help-popup').forEach(p => p.remove());
+}
+
+function showHelpModal(idx) {
+  if (idx < 0 || state.mode !== 'answer' || state.lifelines <= 0) return;
+  const slot = elements.wordSlots?.querySelector(`.word-slot[data-index="${idx}"]`);
+  if (!slot) return;
+
+  dismissHelpPopup();
+  state.helpSlotIndex = idx;
+  const rect = slot.getBoundingClientRect();
+
+  const popup = document.createElement('div');
+  popup.className = 'help-popup';
+  popup.innerHTML = `
+    <span class="help-popup-label">Reveal</span>
+    <div class="help-popup-actions">
+      <button type="button" class="btn btn-help help-skip-btn">Skip</button>
+      <button type="button" class="btn btn-help help-yes-btn">Yes</button>
+    </div>
+  `;
+  popup.style.top = `${rect.top + rect.height / 2}px`;
+  popup.style.left = `${rect.left + rect.width / 2}px`;
+  popup.style.transform = 'translate(-50%, -50%)';
+
+  popup.querySelector('.help-skip-btn').onclick = () => {
+    popup.remove();
+    onHelpSkip();
+  };
+  popup.querySelector('.help-yes-btn').onclick = () => {
+    popup.remove();
+    onHelpYes();
+  };
+
+  document.body.appendChild(popup);
+}
+
+function attachHelpHandlers() {
+  _helpCleanupFns.forEach(fn => fn());
+  _helpCleanupFns = [];
+
+  if (!elements.wordSlots) return;
+
+  // Capture-phase listener on document is the earliest interception point for
+  // contextmenu events — fires before any element-level handler or browser
+  // default in Chrome, Firefox, Safari, and Edge.
+  const onContext = (e) => {
+    console.log('[HELP] contextmenu fired', {target: e.target, mode: state.mode, idx: getHelpSlotIndex(e.target)});
+    if (state.mode !== 'answer') return;
+    const idx = getHelpSlotIndex(e.target);
+    if (idx < 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    showHelpModal(idx);
+  };
+  document.addEventListener('contextmenu', onContext, true);
+  _helpCleanupFns.push(() => document.removeEventListener('contextmenu', onContext, true));
+
+  // Click-and-hold (mouse) or long-press (touch) for 1 second
+  const startHold = (e) => {
+    const idx = getHelpSlotIndex(e.target);
+    if (idx >= 0) {
+      helpLongPressTimer = setTimeout(() => showHelpModal(idx), HELP_LONG_PRESS_MS);
+    }
+  };
+  const cancelHold = () => {
+    if (helpLongPressTimer) clearTimeout(helpLongPressTimer);
+    helpLongPressTimer = null;
+  };
+  elements.wordSlots.onpointerdown = startHold;
+  elements.wordSlots.onpointerup = cancelHold;
+  elements.wordSlots.onpointercancel = cancelHold;
+}
+
+function onHelpYes() {
+  const idx = state.helpSlotIndex;
+  if (idx < 0 || idx >= state.wordCount || state.lifelines <= 0) {
+    onHelpSkip();
+    return;
+  }
+  const word = state.currentRoundWords[idx];
+  const input = elements.wordSlots?.querySelector(`.word-slot-input[data-index="${idx}"]`);
+  if (input && word) {
+    input.value = word;
+  }
+  state.lifelines--;
+  state.helpSlotIndex = -1;
+  updateHeader();
+  if (state.lifelines <= 0) showGameOver();
+}
+
+function onHelpSkip() {
+  state.helpSlotIndex = -1;
+}
+
 function attachSlotNavigation() {
-  const inputs = elements.wordSlots.querySelectorAll('.word-slot-input');
-  inputs.forEach((input, i) => {
+  const slots = elements.wordSlots.querySelectorAll('.word-slot');
+  slots.forEach((slot) => {
+    const input = slot.querySelector('.word-slot-input');
+    if (!input) return;
+    const i = parseInt(input.dataset.index ?? '-1', 10);
+    if (i < 0) return;
+    // Click anywhere on slot to focus its input (laptop: direct pointing)
+    slot.onclick = () => {
+      if (!slot.classList.contains('inactive')) input.focus();
+    };
     input.onkeydown = (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
