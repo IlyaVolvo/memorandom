@@ -341,16 +341,17 @@ function renderStudyMode() {
   for (let i = 0; i < maxSlots; i++) {
     if (i >= wc) {
       setSlotState(i, 'inactive', '');
+    } else if (feedback[i] === 'wrong') {
+      setSlotState(i, 'wrong', words[i] || '');
     } else if (feedback[i]) {
-      // Outline only (green/yellow/red), no text - context of entered fields disappears
-      setSlotState(i, feedback[i], '', '');
+      setSlotState(i, feedback[i], '');
     } else {
       setSlotState(i, 'study', words[i] || '');
     }
   }
 }
 
-function renderReplayFeedback() {
+function renderFeedbackMode() {
   const wc = state.wordCount;
   const words = state.currentRoundWords.slice(0, wc);
   const feedback = state.slotFeedback || [];
@@ -358,10 +359,12 @@ function renderReplayFeedback() {
   for (let i = 0; i < maxSlots; i++) {
     if (i >= wc) {
       setSlotState(i, 'inactive', '');
+    } else if (feedback[i] === 'wrong') {
+      setSlotState(i, 'wrong', words[i] || '');
+    } else if (feedback[i]) {
+      setSlotState(i, feedback[i], '');
     } else {
-      // Show expected word in correct place with feedback color (green/yellow/red)
-      // No hint for wrong - we're already showing the correct word
-      setSlotState(i, feedback[i] || 'wrong', words[i] || '', '');
+      setSlotState(i, 'wrong', words[i] || '');
     }
   }
 }
@@ -485,8 +488,7 @@ function submitAnswer() {
   state.slotFeedback = slotFeedback;
 
   if (state.replayRoundIndex >= 0) {
-    // After replay: show feedback (green/yellow/red), wait for Ready
-    renderReplayFeedback();
+    renderFeedbackMode();
     state.mode = 'replay-feedback';
     showPhase('play');
     elements.readyBtn?.classList.remove('hidden');
@@ -498,11 +500,10 @@ function submitAnswer() {
     state.wordStats.push({ word: state.currentRoundWords[state.wordCount - 1], shown: 1, correct: 0 });
     renderStudyMode();
   } else {
-    // Last attempt: round N complete - show correct set (green/yellow/red), wait for Ready
     if (state.replayRoundIndex < 0) {
       state.roundWords.push([...state.currentRoundWords.slice(0, config.initialWords + config.attemptsPerRound - 1)]);
     }
-    renderReplayFeedback();
+    renderFeedbackMode();
     state.mode = 'round-feedback';
     showPhase('play');
     elements.readyBtn?.classList.remove('hidden');
