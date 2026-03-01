@@ -420,14 +420,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  cursor: text;
 }
 
 .word-slot-input {
   width: 100%;
   min-width: 14ch; /* fit longest word (e.g. precipitation) */
   padding: 1rem;
-  touch-action: manipulation;
   font-size: 1.1rem;
   font-family: 'JetBrains Mono', monospace;
   background: var(--bg-dark);
@@ -639,44 +637,4 @@ body {
 
 #game-over-phase .btn {
   width: 100%;
-}
-
-/* Help popup - positioned over the slot */
-.help-popup {
-  position: fixed;
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  animation: fadeIn 0.15s ease;
-}
-
-.help-popup-label {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-
-.help-popup-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.btn-help {
-  padding: 0.25rem 0.6rem !important;
-  font-size: 0.8rem !important;
-  min-width: auto !important;
-  background: var(--bg-elevated) !important;
-  color: var(--text) !important;
-  border: 1px solid var(--border) !important;
-}
-
-.btn-help:hover {
-  background: var(--border) !important;
-  color: var(--text) !important;
 }
